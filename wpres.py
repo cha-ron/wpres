@@ -11,10 +11,13 @@ def cli():
 def get_window_ids_list():
     return map(strip_end_char, sh.lsw())
 
-@cli.command()
+@cli.command(name='save')
 @click.argument('target', nargs=1, type=click.File('w'))
-def save(target):
+def save_interface(target):
     """Saves the current window state as a JSON object."""
+    target.write(json.dumps(save()))
+
+def save():
     windows = get_window_ids_list()
 
     window_attrs_dict = {}
@@ -25,13 +28,24 @@ def save(target):
                     map(lambda attr: int(attr), window_attrs.split(' '))))
         window_attrs_dict[window_id] = attr_dict
 
-    target.write(json.dumps(window_attrs_dict))
+    return window_attrs_dict
 
-def apply_window_attrs(window_id, x, y, width, height, border):
+def apply_window_attrs(window_id, x, y, width, height, border, color=None):
+    # compensate for border width
+    if border > 0:
+        #x += border
+        #y += border
+        width -= (2 * border)
+        height -= (2 * border)
+
     sh.wtp(x, y, width, height, window_id)
-    sh.chwb('-s', border, window_id)
 
-@cli.command()
+    if color is not None:
+        sh.chwb('-c', color, '-s', border, window_id)
+    else:
+        sh.chwb('-s', border, window_id)
+
+@cli.command(name="load")
 @click.argument('target', nargs=1, type=click.File('r'))
 @click.option('--merge/--fail-on-mismatch', default=True,
                 help="Whether to only alter windows whose attributes are "
@@ -39,12 +53,16 @@ def apply_window_attrs(window_id, x, y, width, height, border):
                      "fail when windows with ids other than those in the "
                      "input state object exist; defaults to only affecting "
                      "existing windows.")
-def load(target, merge):
+def load_interface(target, merge):
     """Applies a saved window state to the current window state."""
-    existing_windows = get_window_ids_list()
-
     target_contents = target.read()
-    load_state = json.loads(target_contents)
+    load(target_contents, merge)
+
+def load(target_contents, merge, existing_windows=None):
+    if existing_windows is None:
+        existing_windows = get_window_ids_list()
+
+    load_state = json.loads(str(target_contents))
 
     if merge:
         apply_to_ids = set(load_state.keys()) & set(existing_windows)
